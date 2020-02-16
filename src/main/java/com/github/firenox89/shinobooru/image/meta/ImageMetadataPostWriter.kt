@@ -14,6 +14,9 @@ import org.apache.commons.imaging.formats.tiff.write.TiffOutputSet
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.CopyOption
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 data class Post(
     val board: String,
@@ -33,12 +36,16 @@ private const val PNG_TAGS_KEY = "shinobooru-tags"
 
 object ImageMetadataPostWriter {
     fun writePostToImage(source: File, destination: File, post: Post) {
+        var destFile = destination
+        if (source == destination) {
+            destFile = createTempFile()
+        }
         when (Imaging.guessFormat(source)) {
             ImageFormats.PNG -> {
 
                 val pngr = PngReader(source)
-                println(pngr.toString());
-                val pngw = PngWriter(destination, pngr.imgInfo, true)
+                println(pngr.toString())
+                val pngw = PngWriter(destFile, pngr.imgInfo, true)
 
                 pngw.copyChunksFrom(pngr.chunksList, ChunkCopyBehaviour.COPY_PALETTE)
 
@@ -66,7 +73,7 @@ object ImageMetadataPostWriter {
                     Gson().toJson(post)
                 )
 
-                BufferedOutputStream(FileOutputStream(destination)).use { os ->
+                BufferedOutputStream(FileOutputStream(destFile)).use { os ->
                     ExifRewriter().updateExifMetadataLossless(
                         source, os,
                         outputSet
@@ -76,6 +83,9 @@ object ImageMetadataPostWriter {
             else -> {
                 throw IllegalArgumentException("Unsupported image format.")
             }
+        }
+        if (source == destination) {
+            Files.move(destFile.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
     }
 
