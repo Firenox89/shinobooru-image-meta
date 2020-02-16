@@ -1,19 +1,19 @@
 package com.github.firenox89.shinobooru.image.meta
 
+import ar.com.hjg.pngj.PngReader
+import ar.com.hjg.pngj.PngWriter
+import ar.com.hjg.pngj.chunks.ChunkCopyBehaviour
+import ar.com.hjg.pngj.chunks.PngChunkTEXT
 import com.google.gson.Gson
 import org.apache.commons.imaging.ImageFormats
 import org.apache.commons.imaging.Imaging
-import org.apache.commons.imaging.common.GenericImageMetadata
 import org.apache.commons.imaging.formats.jpeg.JpegImageMetadata
 import org.apache.commons.imaging.formats.jpeg.exif.ExifRewriter
-import org.apache.commons.imaging.formats.png.PngConstants
-import org.apache.commons.imaging.formats.png.PngText
 import org.apache.commons.imaging.formats.tiff.constants.ExifTagConstants
 import org.apache.commons.imaging.formats.tiff.write.TiffOutputSet
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.lang.IllegalArgumentException
 
 data class Post(
     val board: String,
@@ -35,27 +35,23 @@ object ImageMetadataPostWriter {
     fun writePostToImage(source: File, destination: File, post: Post) {
         when (Imaging.guessFormat(source)) {
             ImageFormats.PNG -> {
-                val metadata = Imaging.getMetadata(source)?.items?.map {
-                    it as GenericImageMetadata.GenericImageMetadataItem
-                    PngText.Text(it.keyword, it.text)
-                } ?: emptyList()
 
-                val params = mapOf(PngConstants.PARAM_KEY_PNG_TEXT_CHUNKS to metadata.toMutableSet().apply {
-                    add(PngText.Text(PNG_BOARD_KEY, post.board))
-                    add(PngText.Text(PNG_ID_KEY, post.id))
-                    add(PngText.Text(PNG_AUTHOR_KEY, post.author))
-                    add(PngText.Text(PNG_SOURCE_KEY, post.source))
-                    add(PngText.Text(PNG_RATING_KEY, post.rating))
-                    add(PngText.Text(PNG_TAGS_KEY, post.tags))
-                }.toList())
+                val pngr = PngReader(source)
+                println(pngr.toString());
+                val pngw = PngWriter(destination, pngr.imgInfo, true)
 
-                BufferedOutputStream(FileOutputStream(destination)).use { os ->
-                    Imaging.writeImage(
-                        Imaging.getBufferedImage(source), os, ImageFormats.PNG,
-                        params.toMutableMap() as Map<String, Any>?
-                    )
+                pngw.copyChunksFrom(pngr.chunksList, ChunkCopyBehaviour.COPY_PALETTE)
 
-                }
+                pngw.metadata.setText(PNG_BOARD_KEY, post.board)
+                pngw.metadata.setText(PNG_ID_KEY, post.id)
+                pngw.metadata.setText(PNG_AUTHOR_KEY, post.author)
+                pngw.metadata.setText(PNG_SOURCE_KEY, post.source)
+                pngw.metadata.setText(PNG_RATING_KEY, post.rating)
+                pngw.metadata.setText(PNG_TAGS_KEY, post.tags)
+
+                pngw.writeRows(pngr.readRows());
+                pngr.end(); // it's recommended to end the reader first, in case there are trailing chunks to read
+                pngw.end();
             }
             ImageFormats.JPEG -> {
                 val metadata = Imaging.getMetadata(source);
@@ -86,18 +82,20 @@ object ImageMetadataPostWriter {
     fun readPostFromImage(image: File): Post {
         return when (Imaging.guessFormat(image)) {
             ImageFormats.PNG -> {
-                val metadata = Imaging.getMetadata(image).items.map {
-                    it as GenericImageMetadata.GenericImageMetadataItem
-                    PngText.Text(it.keyword, it.text)
-                }
-                val board = metadata.find { it.keyword == PNG_BOARD_KEY }?.text
-                val id = metadata.find { it.keyword == PNG_ID_KEY }?.text
-                val author = metadata.find { it.keyword == PNG_AUTHOR_KEY }?.text ?: ""
-                val source = metadata.find { it.keyword == PNG_SOURCE_KEY }?.text ?: ""
-                val rating = metadata.find { it.keyword == PNG_RATING_KEY }?.text
-                val tags = metadata.find { it.keyword == PNG_TAGS_KEY }?.text ?: ""
-                if (board == null || id == null || rating == null) {
-                    throw IllegalArgumentException("Image does not contain post information")
+                val pngr = PngReader(image)
+
+                //PNGJ writes metadata to the end of the file so we need to read the whole thing
+                pngr.readSkippingAllRows()
+
+                val board = pngr.metadata.getTxtForKey(PNG_BOARD_KEY)
+                val id = pngr.metadata.getTxtForKey(PNG_ID_KEY)
+                val author = pngr.metadata.getTxtForKey(PNG_AUTHOR_KEY)
+                val source = pngr.metadata.getTxtForKey(PNG_SOURCE_KEY)
+                val rating = pngr.metadata.getTxtForKey(PNG_RATING_KEY)
+                val tags = pngr.metadata.getTxtForKey(PNG_TAGS_KEY)
+
+                if (board.isNullOrBlank() || id.isNullOrBlank()) {
+                    throw IllegalArgumentException("Image does not contain post information $image")
                 }
 
                 Post(board, id, author, source, rating, tags)
