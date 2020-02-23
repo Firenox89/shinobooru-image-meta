@@ -3,7 +3,6 @@ package com.github.firenox89.shinobooru.image.meta
 import ar.com.hjg.pngj.PngReader
 import ar.com.hjg.pngj.PngWriter
 import ar.com.hjg.pngj.chunks.ChunkCopyBehaviour
-import ar.com.hjg.pngj.chunks.PngChunkTEXT
 import com.google.gson.Gson
 import org.apache.commons.imaging.ImageFormats
 import org.apache.commons.imaging.Imaging
@@ -14,7 +13,6 @@ import org.apache.commons.imaging.formats.tiff.write.TiffOutputSet
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.nio.file.CopyOption
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
@@ -38,7 +36,7 @@ object ImageMetadataPostWriter {
     fun writePostToImage(source: File, destination: File, post: Post) {
         var destFile = destination
         if (source == destination) {
-            destFile = createTempFile()
+            destFile = File(source.parentFile, source.name+".tmp")
         }
         when (Imaging.guessFormat(source)) {
             ImageFormats.PNG -> {
@@ -85,7 +83,8 @@ object ImageMetadataPostWriter {
             }
         }
         if (source == destination) {
-            Files.move(destFile.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            source.delete()
+            destFile.renameTo(source)
         }
     }
 
